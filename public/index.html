@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchy</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="clock">
+      <div class="time" id="time"></div>
+      <div class="date" id="greeting"></div>
+    </div>
+    <div class="account" id="account"></div>
+  </header>
+
+  <main>
+    <form class="search" id="search-form" role="search" autocomplete="off">
+      <button type="button" class="provider" id="provider" aria-haspopup="listbox" aria-expanded="false" title="Search engine"></button>
+      <ul class="provider-menu" id="provider-menu" role="listbox" hidden></ul>
+      <input id="q" type="search" placeholder="Search or open an app…" aria-label="Search" aria-controls="results"
+             aria-autocomplete="list" role="combobox" aria-expanded="false" autofocus spellcheck="false">
+      <kbd class="hint">/</kbd>
+      <ul class="results" id="results" role="listbox" hidden></ul>
+    </form>
+
+    <div class="layout">
+      <section class="apps" id="apps" aria-label="Apps"></section>
+      <aside class="widgets" id="widgets" aria-label="Dashboard"></aside>
+    </div>
+  </main>
+
+  <dialog id="login" aria-labelledby="login-title">
+    <form id="login-form" method="dialog">
+      <h2 id="login-title">Sign in</h2>
+      <label>User name <input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="login-error" id="login-error" role="alert"></p>
+      <div class="login-actions">
+        <button type="button" class="pill" id="login-cancel">Cancel</button>
+        <button type="submit" class="primary">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="widget-tpl">
+    <article class="widget">
+      <header><h2></h2><a class="widget-link" target="_blank" rel="noopener" hidden>Open ↗</a></header>
+      <div class="widget-body"><div class="skeleton"></div><div class="skeleton short"></div></div>
+    </article>
+  </template>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

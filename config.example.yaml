@@ -1,0 +1,168 @@
+# Launchy settings. Copy to config/config.yaml and adjust; changes apply on save, no restart.
+# Secrets: write ${ENV_VAR} anywhere and pass the variable to the container.
+# Passwords, widget settings and ping targets never reach the browser.
+
+title: Launchy
+
+# ------------------------------------------------------------------ who sees what
+# `public` is shown to anyone who opens the page without signing in. Remove it to require a login.
+# Each user has a full configuration of their own; home and work can simply be two users.
+# Create a password hash with:  npm run hash-password
+public:
+  name: Guest
+  groups: [links]
+  widgets: []
+
+users:
+  alex:
+    name: Alex
+    greeting: Alex
+    password: scrypt:REPLACE_WITH_OUTPUT_OF_npm_run_hash-password
+    theme: { accent: "#5b6cff" }
+    groups: [home, media, productivity, ai, infra]
+    widgets: [briefing, containers, notes]
+  alex-work:
+    name: Alex (work)
+    greeting: Alex
+    password: scrypt:REPLACE_WITH_OUTPUT_OF_npm_run_hash-password
+    search: ddg
+    theme: { accent: "#0f9d8a", mode: light }
+    groups: [work, ai]
+    widgets: []
+  studio:
+    name: Studio
+    password: scrypt:REPLACE_WITH_OUTPUT_OF_npm_run_hash-password
+    theme: { accent: "#b07a52", mode: light, font: "Georgia, 'Times New Roman', serif" }
+    groups: [business, home]
+    widgets: [studio-briefing, sessions, stripe, blog]
+
+# ------------------------------------------------------------------ AI
+# Used by `ai` widgets; a widget can override any field.
+#   provider: local   any OpenAI-compatible server: Ollama (url ending in /v1), llama.cpp, LM Studio, vLLM
+#   provider: claude  Anthropic API, needs key (or ANTHROPIC_API_KEY)
+# A certificate from your own CA: set NODE_EXTRA_CA_CERTS=/path/ca.pem for the container.
+llm:
+  provider: local
+  url: http://192.168.1.10:11434/v1
+  model: gemma3:12b
+  # provider: claude
+  # model: claude-opus-5-5
+  # key: ${ANTHROPIC_API_KEY}
+
+# ------------------------------------------------------------------ search
+# {q} is replaced by the query. `bang` lets you type "!d cats" to use that engine once.
+# `suggest` (optional) must return OpenSearch JSON: ["query", ["suggestion", ...]].
+search:
+  default: google
+  providers:
+    - { id: google, name: Google, bang: g, url: "https://www.google.com/search?q={q}", suggest: "https://suggestqueries.google.com/complete/search?client=firefox&q={q}" }
+    - { id: ddg, name: DuckDuckGo, bang: d, url: "https://duckduckgo.com/?q={q}", suggest: "https://duckduckgo.com/ac/?type=list&q={q}" }
+    - { id: kagi, name: Kagi, bang: k, url: "https://kagi.com/search?q={q}" }
+    - { id: youtube, name: YouTube, bang: yt, url: "https://www.youtube.com/results?search_query={q}" }
+    - { id: wiki, name: Wikipedia, bang: w, url: "https://en.wikipedia.org/w/index.php?search={q}", suggest: "https://en.wikipedia.org/w/api.php?action=opensearch&limit=6&search={q}" }
+    - { id: github, name: GitHub, bang: gh, url: "https://github.com/search?q={q}" }
+
+# ------------------------------------------------------------------ services
+# Every service you run, grouped. Views above pick which groups they show.
+# url: the address you open. ping: the address the status dot checks (e.g. host:port behind your
+# reverse proxy); defaults to url, `false` turns it off.
+# icon: a name from https://dashboard-icons.dev, an image URL, or an emoji.
+groups:
+  home:
+    title: Smart home
+    apps:
+      - { name: Home Assistant, url: "https://home.example.com", icon: home-assistant, ping: "http://192.168.1.10:8123", tags: [lights] }
+      - { name: Zigbee2MQTT, url: "https://zigbee.example.com", icon: zigbee2mqtt, ping: "http://192.168.1.10:8081" }
+      - { name: Frigate, url: "https://nvr.example.com", icon: frigate, description: Cameras, ping: "http://192.168.1.10:8971" }
+
+  media:
+    title: Media & files
+    apps:
+      - { name: Jellyfin, url: "https://media.example.com", icon: jellyfin, description: Movies & TV, ping: "http://192.168.1.10:8096" }
+      - { name: Immich, url: "https://photo.example.com", icon: immich, description: Photos, ping: "http://192.168.1.10:2283" }
+      - { name: Paperless, url: "https://docs.example.com", icon: paperless-ngx, description: Documents, ping: "http://192.168.1.10:8000" }
+
+  productivity:
+    title: Mail, notes & tasks
+    apps:
+      - { name: Vikunja, url: "https://tasks.example.com", icon: vikunja, description: Tasks, ping: "http://192.168.1.10:3456" }
+      - { name: Vaultwarden, url: "https://password.example.com", icon: vaultwarden, description: Passwords, ping: "http://192.168.1.10:8180" }
+
+  ai:
+    title: AI
+    apps:
+      - { name: Open WebUI, url: "https://chat.example.com", icon: open-webui, ping: "http://192.168.1.10:3001" }
+      - { name: Ollama API, url: "https://ollama.example.com", icon: ollama, ping: "http://192.168.1.10:11434" }
+
+  infra:
+    title: Infrastructure
+    apps:
+      - { name: Cockpit, url: "https://cockpit.example.com", icon: cockpit, ping: "https://192.168.1.10:9090" }
+      - { name: AdGuard Home, url: "https://dns.example.com", icon: adguard-home, ping: "http://192.168.1.10:3000" }
+
+  business:
+    title: Clients & payments
+    apps:
+      - { name: Pixieset, url: "https://studio.pixieset.com", icon: "https://www.google.com/s2/favicons?sz=64&domain=pixieset.com", description: Galleries, ping: false }
+      - { name: Pic-Time, url: "https://www.pic-time.com/account", icon: "https://www.google.com/s2/favicons?sz=64&domain=pic-time.com", description: Client galleries, ping: false }
+      - { name: Stripe, url: "https://dashboard.stripe.com", icon: stripe, description: Payments, ping: false }
+      - { name: Website, url: "https://example.com", icon: wordpress, ping: false }
+
+  links:
+    title: Links
+    apps:
+      - { name: Website, url: "https://example.com", icon: "🌐", ping: false }
+
+  work:
+    title: Work
+    apps:
+      - { name: Outlook, url: "https://outlook.office.com", icon: microsoft-outlook, ping: false }
+      - { name: GitHub, url: "https://github.com", icon: github, ping: false }
+
+# ------------------------------------------------------------------ widgets
+# Types: podman, stripe, rss, ical, http, ai. `refresh` (seconds) overrides the default.
+# `link` adds an "Open ↗" link to the widget header.
+widgets:
+  containers:
+    type: podman
+    title: Containers
+    socket: /run/podman/podman.sock   # mount an account's podman socket here (see README)
+
+  notes:
+    type: http                        # any JSON API: map fields with dot paths
+    title: Recent notes
+    link: https://notes.example.com
+    url: http://192.168.1.10:9124/api/notes?sort=updated
+    headers: { Authorization: "Bearer ${NOTES_TOKEN}" }
+    items: { path: notes, title: title, subtitle: updated_at, url: url, limit: 5 }
+
+  briefing:
+    type: ai                          # uses the `llm` settings above
+    title: Briefing
+    sources: [notes, containers]
+    prompt: Notable notes first, then infrastructure problems.
+    refresh: 1800
+
+  stripe:
+    type: stripe
+    title: Stripe
+    link: https://dashboard.stripe.com
+    key: ${STRIPE_KEY}                # restricted key with read access to Balance and Charges
+
+  sessions:
+    type: ical
+    title: Upcoming sessions
+    url: ${STUDIO_CALENDAR_ICS}       # e.g. a Pixieset / Pic-Time calendar-sync URL
+    days: 21
+
+  blog:
+    type: rss
+    title: Blog
+    link: https://example.com
+    url: https://example.com/feed/
+
+  studio-briefing:
+    type: ai
+    title: Studio briefing
+    sources: [sessions, stripe, blog]
+    prompt: Upcoming shoots and anything to prepare, new payments, and website activity.
