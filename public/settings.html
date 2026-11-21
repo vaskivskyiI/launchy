@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchy settings</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body class="settings-page">
+  <header class="settings-top">
+    <a class="back" href="/">← Start page</a>
+    <h1>Settings</h1>
+    <div class="savebar" id="savebar" hidden>
+      <span id="save-state">Unsaved changes</span>
+      <button type="button" class="pill" id="discard">Discard</button>
+      <button type="button" class="primary" id="save">Save</button>
+    </div>
+  </header>
+  <div class="settings-errors" id="errors" role="alert" hidden></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" id="nav" aria-label="Sections"></nav>
+    <main class="settings-main" id="main"><p class="muted">Loading…</p></main>
+  </div>
+
+  <dialog id="ask" class="ask">
+    <form method="dialog" id="ask-form">
+      <h2 id="ask-title"></h2>
+      <div id="ask-fields"></div>
+      <p class="login-error" id="ask-error" role="alert"></p>
+      <div class="login-actions">
+        <button type="button" class="pill" id="ask-cancel">Cancel</button>
+        <button type="submit" class="primary" id="ask-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="settings.js" type="module"></script>
+</body>
+</html>

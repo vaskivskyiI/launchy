@@ -1,67 +1,56 @@
 # Launchy
 
-A self-hosted browser start page: one search bar that also opens your apps, app tiles with live status, a public view plus one signed-in view per user, and widgets with live data from your services, including an AI briefing from a local model or Claude.
+A self-hosted browser start page: one search bar that also opens your apps, app tiles with live status, a public view plus one signed-in view per user, an AI briefing with links to what it mentions, and live data from your services one click away. Everything is set up in the browser.
 
 ## Features
 
 - **Search and launch in one box.** Type to match apps by name, tag or description, or search the web. `!d cats` uses DuckDuckGo once, typing a hostname opens it, and suggestions come through the server. Press `/` or just start typing anywhere. Use ↑/↓ to move, Enter to open, Ctrl+Enter to open in a new tab.
-- **Selectable search engines.** Each user has their own default engine, and the choice made in the browser is remembered.
-- **Public view and users.** `public` is what anyone sees without signing in; leave it out to require a login. Each entry under `users` is a complete configuration of its own (groups, widgets, accent colour, light/dark mode, background, font), so home and work are simply two users.
-- **Status dots.** The server pings each app every 60 s. Set `ping:` to check an internal address, or `false` to skip the app.
-- **Widgets** run on the server, so API keys never reach the browser:
-  | type | shows |
-  |---|---|
-  | `podman` | running and stopped containers, from the Podman or Docker socket |
-  | `stripe` | balance and latest payments |
-  | `ical` | upcoming events from any iCal feed (Pixieset/Pic-Time calendar sync, Google, Nextcloud) |
-  | `rss` | latest posts from a website feed |
-  | `http` | any JSON API: fields are dot paths (`title.rendered`) or templates (`"{label} on {camera}"`), and `date` (ISO or epoch) shows as "2 hours ago" |
-  | `halcyon` | Halcyon mail needing attention, tasks and today's events, or (`show: events`) the coming days, through its read-only assistant token |
-  | `ai` | a short briefing built from other widgets' data, by your local model or Claude |
+- **Calm start page.** A tile opens its app. Apps with live data get a badge (e.g. mail needing attention) and a `›` button that opens a side panel with their widgets and an "Open" button. Only the briefing (and widgets not tied to an app) sits on the page itself.
+- **Briefing with links.** An AI briefing summarises the other widgets; every mail, event, note or document it mentions links straight to it. It only states facts from its sources.
+- **Users and a public view.** Each user has their own groups, widgets, accent colour, light/dark mode, font and search engine; home and work can simply be two users. Visitors who are not signed in see the public view, or only a sign-in form.
+- **Settings page** (`/settings`, administrators only): users and passwords, apps, groups, widgets, search engines, the AI model and secrets. Changes are validated and saved in one step; the previous 20 versions are kept in `config/history/`.
+- **Status dots.** The server checks each app every 60 s, optionally at an internal address.
 
-  A widget whose `${SECRET}` is not set shows "Not set up yet" with the variable to add, instead of an error.
-- **Settings reload on save.** All of the above lives in `config/config.yaml`. A broken edit keeps the last good settings running and logs the error.
+## Widgets
 
-## Users and passwords
+They run on the server, so tokens never reach the browser.
 
-```sh
-npm run hash-password        # type the password; paste the printed scrypt:… line as the user's `password`
-```
+| type | shows |
+|---|---|
+| `halcyon` | Halcyon mail needing attention (with a badge), tasks and today's events, or the coming days, through its read-only assistant token |
+| `http` | any JSON API: fields are dot paths (`title.rendered`) or templates (`{label} on {camera}`); dates show as "2 hours ago" |
+| `ical` | upcoming events from a calendar feed (Pixieset/Pic-Time calendar sync, Google, Nextcloud) |
+| `rss` | latest posts from a website feed |
+| `stripe` | balance and latest payments (restricted read-only key) |
+| `podman` | running and stopped containers, from a Podman or Docker socket |
+| `ai` | a short briefing from other widgets, by your own model (any OpenAI-compatible server, e.g. Ollama) or Claude |
 
-Sessions last 30 days in an HttpOnly cookie signed with `LAUNCHY_SECRET` (set it to a long random string, or everyone is signed out when the server restarts). Changing a user's password signs that user out everywhere. After 5 wrong passwords from one IP, sign-in is blocked for 15 minutes. Behind nginx, pass `X-Real-IP` so the limit applies per visitor, and `X-Forwarded-Proto` so the cookie is marked Secure.
+A widget whose secret has no value says "Not set up yet" and names the secret, instead of failing.
 
-## AI
+## Secrets
 
-The top-level `llm` block sets the model for every `ai` widget, and a widget can override any field:
+Settings refer to tokens as `${NAME}`. Set values at **Settings → Secrets** (stored in `config/secrets.yaml`, mode 600, never shown again) or pass them as environment variables.
 
-- `provider: local` works with any OpenAI-compatible server: Ollama (`url: https://host/v1`), llama.cpp, LM Studio or vLLM. If the server's certificate comes from your own CA, set `NODE_EXTRA_CA_CERTS=/path/ca.pem`.
-- `provider: claude` uses the Anthropic API (`key` or `ANTHROPIC_API_KEY`).
-
-Results are cached for the widget's `refresh` period (30 minutes by default). The model gets no tools, and source content is passed to it as data only.
-
-## Run locally
+## Install
 
 ```sh
-cp config.example.yaml config/config.yaml   # then set password hashes
+cp config.example.yaml config/config.yaml
 npm install
-npm start            # http://localhost:8080
+npm run hash-password        # paste the printed scrypt:… line as the admin user's password
+npm start                    # http://localhost:8080, then open /settings
 ```
+
+Sessions last 30 days in an HttpOnly cookie signed with `LAUNCHY_SECRET`; set it to a long random string, or everyone is signed out when the server restarts. After 5 wrong passwords from one address, sign-in pauses for 15 minutes. Behind a reverse proxy, pass `X-Real-IP` and `X-Forwarded-Proto`.
 
 ## Run in Podman
 
 ```sh
 podman build -t launchy .
 podman run -d --name launchy -p 127.0.0.1:8080:8080 \
+  --userns=keep-id:uid=1000,gid=1000 \
   -v ./config:/config:Z \
-  -v /run/user/$(id -u)/podman/podman.sock:/run/podman/podman.sock \
-  --security-opt label=disable --userns=keep-id \
-  -e LAUNCHY_SECRET -e STRIPE_KEY -e STUDIO_CALENDAR_ICS \
+  -e LAUNCHY_SECRET \
   launchy
 ```
 
-The socket mount is only needed for the `podman` widget. Enable the socket first with `systemctl --user enable --now podman.socket`. The container runs as a non-root user, so mount the rootless socket shown above.
-
-## Notes
-
-- Pixieset and Pic-Time have no public API for this, so the studio view combines quick links with their calendar-sync (iCal) feeds and the website's posts. Stripe has a real API: use a **restricted key** with read-only access to Balance and Charges.
-- The public view only receives its own groups. Users' apps, widgets and service addresses are never sent to a browser that isn't signed in as that user.
+`--userns=keep-id:uid=1000,gid=1000` maps your account to the container's user, so the settings page can save into `./config` and you can still edit the files yourself. If your services use certificates from your own CA, also mount it and set `NODE_EXTRA_CA_CERTS=/path/in/container/ca.pem`. For the `podman` widget, mount a Podman socket (`systemctl --user enable --now podman.socket`).

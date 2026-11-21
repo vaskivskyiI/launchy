@@ -7,6 +7,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const ICON_CDN = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/';
 
 let cfg;            // public config of the current viewer (a user or the public view)
+let appStatus = {}; // app id -> up | down
 let provider;       // active search provider
 const timers = [];  // polling intervals, cleared when the viewer changes
 
@@ -52,7 +53,7 @@ const loginForm = $('#login-form');
 function renderAccount() {
   const el = $('#account');
   if (cfg.viewer.user) {
-    el.innerHTML = `<span class="who">${esc(cfg.viewer.name)}</span><button type="button" class="pill" id="logout">Sign out</button>`;
+    el.innerHTML = `<span class="who">${esc(cfg.viewer.name)}</span>${cfg.viewer.admin ? '<a class="pill" href="/settings">Settings</a>' : ''}<button type="button" class="pill" id="logout">Sign out</button>`;
     $('#logout').addEventListener('click', logout);
   } else {
     el.innerHTML = cfg.canLogin ? '<button type="button" class="pill" id="signin">Sign in</button>' : '';
@@ -125,20 +126,59 @@ function iconHtml(icon, name) {
   return `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(mono)}">`;
 }
 
+const appWidgets = (appId) => cfg.widgets.filter((w) => w.app === appId);
+const findApp = (appId) => cfg.groups.flatMap((g) => g.apps).find((a) => a.key === appId);
+
+// A tile opens its app. Apps with widgets also get a badge (e.g. mail needing attention) and a details button
+// that opens a side panel with the widgets and an "Open" button.
 function renderApps() {
   $('#apps').innerHTML = cfg.groups.map((g) => `
     <section class="group">
       <h2>${esc(g.title)}</h2>
       <div class="grid">
         ${g.apps.map((a) => `
-          <a class="tile" href="${esc(a.url)}" data-key="${esc(a.key)}" title="${esc(a.description || a.url)}">
-            <span class="icon">${iconHtml(a.icon, a.name)}</span>
-            <span class="text"><div class="name">${esc(a.name)}</div>${a.description ? `<div class="desc">${esc(a.description)}</div>` : ''}</span>
+          <div class="tile" data-key="${esc(a.key)}">
+            <a class="tile-link" href="${esc(a.url)}" title="${esc(a.description || a.url)}">
+              <span class="icon">${iconHtml(a.icon, a.name)}</span>
+              <span class="text"><span class="name">${esc(a.name)}</span>${a.description ? `<span class="desc">${esc(a.description)}</span>` : ''}</span>
+            </a>
+            <span class="badge" hidden></span>
+            ${appWidgets(a.key).length ? `<button type="button" class="tile-more" data-app="${esc(a.key)}" aria-label="${esc(a.name)}: details" title="Details">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
             ${a.monitored ? '<span class="dot" role="img" aria-label="status unknown"></span>' : ''}
-          </a>`).join('')}
+          </div>`).join('')}
       </div>
     </section>`).join('');
 }
+
+$('#apps').addEventListener('click', (e) => {
+  const more = e.target.closest('.tile-more');
+  if (more) openPanel(more.dataset.app);
+});
+
+// ---------------------------------------------------------------- app panel
+
+const panel = $('#app-panel');
+
+function openPanel(appId) {
+  const a = findApp(appId);
+  if (!a) return;
+  $('#panel-icon').innerHTML = iconHtml(a.icon, a.name);
+  $('#panel-name').textContent = a.name;
+  $('#panel-desc').textContent = a.description || new URL(a.url).host;
+  const s = appStatus[appId];
+  $('#panel-status').textContent = s === 'up' ? 'Online' : s === 'down' ? 'Not responding' : '';
+  $('#panel-status').className = `panel-status ${s || ''}`;
+  Object.assign($('#panel-open'), { href: a.url, textContent: `Open ${a.name}` });
+  const box = $('#panel-widgets');
+  box.innerHTML = '';
+  for (const w of appWidgets(appId)) box.append(widgetCard(w));
+  panel.showModal();
+  $('#panel-open').focus();
+}
+
+panel.addEventListener('click', (e) => { if (e.target === panel) panel.close(); }); // click on the backdrop
+$('#panel-close').addEventListener('click', () => panel.close());
 
 async function refreshStatus() {
   const res = await fetch('/api/status').catch(() => null);
@@ -151,12 +191,18 @@ async function refreshStatus() {
     dot.className = `dot ${s}`;
     dot.setAttribute('aria-label', s === 'up' ? 'online' : 'offline');
   }
+  appStatus = status;
 }
 
 // ---------------------------------------------------------------- widgets
 
-function renderText(text) {
-  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+// Briefing text: "- " bullets, **bold**, and [n] citations that link to the item they mention.
+function renderText(text, refs = {}) {
+  const inline = (line) => esc(line)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[(\d+)\]/g, (m, n) => (refs[n]
+      ? `<a class="ref" href="${esc(refs[n].url)}" target="_blank" rel="noopener" title="${esc(refs[n].title)}" aria-label="Open: ${esc(refs[n].title)}">↗</a>`
+      : ''));
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   const bullets = lines.filter((l) => /^[-*•]\s/.test(l));
   if (bullets.length && bullets.length === lines.length) {
@@ -179,31 +225,60 @@ function renderWidgetData(body, data) {
       return `<li>${it.url && /^https?:/.test(it.url) ? `<a class="row" href="${esc(it.url)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="row">${inner}</div>`}</li>`;
     }).join('')}</ul>`;
   }
-  if (data.text) html += `<div class="widget-text">${renderText(data.text)}</div>`;
+  if (data.text) html += `<div class="widget-text">${renderText(data.text, data.refs)}</div>`;
   body.innerHTML = html || '<div class="widget-text"><p>No data.</p></div>';
+}
+
+// Each widget is fetched once per refresh period; every card showing it (main page or app panel) repaints.
+const widgetState = new Map(); // id -> { data } | { error }
+
+function paintCard(el) {
+  const state = widgetState.get(el.dataset.widget);
+  if (!state) return;
+  const body = el.querySelector('.widget-body');
+  if (state.error) body.innerHTML = `<p class="widget-error">${esc(state.error)}</p>`;
+  else renderWidgetData(body, state.data);
+}
+
+function widgetCard(w) {
+  const el = $('#widget-tpl').content.firstElementChild.cloneNode(true);
+  el.querySelector('h2').textContent = w.title;
+  el.dataset.widget = w.id;
+  el.dataset.type = w.type;
+  if (w.url) Object.assign(el.querySelector('.widget-link'), { href: w.url, hidden: false });
+  paintCard(el);
+  return el;
+}
+
+function updateBadge(appId) {
+  const badge = document.querySelector(`.tile[data-key="${CSS.escape(appId)}"] .badge`);
+  if (!badge) return;
+  const n = appWidgets(appId).reduce((sum, w) => sum + (Number(widgetState.get(w.id)?.data?.badge) || 0), 0);
+  badge.hidden = !n;
+  badge.textContent = n > 99 ? '99+' : String(n);
+  badge.title = `${n} need attention`;
 }
 
 function renderWidgets() {
   const aside = $('#widgets');
   aside.innerHTML = '';
-  $('.layout').classList.toggle('no-widgets', !cfg.widgets.length);
+  widgetState.clear();
+  const main = cfg.widgets.filter((w) => !w.app);
+  $('.layout').classList.toggle('no-widgets', !main.length);
+  for (const w of main) aside.append(widgetCard(w));
   for (const w of cfg.widgets) {
-    const el = $('#widget-tpl').content.firstElementChild.cloneNode(true);
-    el.querySelector('h2').textContent = w.title;
-    el.dataset.type = w.type;
-    if (w.url) Object.assign(el.querySelector('.widget-link'), { href: w.url, hidden: false });
-    aside.append(el);
-    const body = el.querySelector('.widget-body');
     const update = async () => {
       try {
         const res = await fetch(`/api/widget/${encodeURIComponent(w.id)}`);
         if (res.status === 401) return load(); // session ended (signed out elsewhere or password changed)
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderWidgetData(body, data);
+        widgetState.set(w.id, { data });
       } catch (err) {
-        body.innerHTML = `<p class="widget-error">${esc(err.message)}</p>`;
+        widgetState.set(w.id, { error: err.message });
       }
+      document.querySelectorAll(`.widget[data-widget="${CSS.escape(w.id)}"]`).forEach(paintCard);
+      if (w.app) updateBadge(w.app);
     };
     update();
     timers.push(setInterval(update, Math.max(w.refresh, 15) * 1000));
@@ -271,7 +346,7 @@ function update() {
   if (!raw) return closeResults();
   const { p, q } = parseQuery(raw);
   const lower = q.toLowerCase();
-  const apps = lower ? cfg.groups.flatMap((g) => g.apps)
+  const apps = lower ? [...new Map(cfg.groups.flatMap((g) => g.apps).map((a) => [a.key, a])).values()]
     .map((a) => ({ a, s: scoreApp(a, lower) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5) : [];
   const appResults = apps.map(({ a }) => ({ kind: 'App', label: a.name, icon: iconHtml(a.icon, a.name), url: a.url }));
   const web = q ? [{ kind: p.name, label: q, icon: '⌕', url: searchUrl(p, q), primary: true }] : [];

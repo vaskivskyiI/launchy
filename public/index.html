@@ -46,6 +46,21 @@
     </form>
   </dialog>
 
+  <dialog id="app-panel" class="panel" aria-labelledby="panel-name">
+    <header class="panel-head">
+      <span class="icon" id="panel-icon"></span>
+      <div class="panel-title">
+        <h2 id="panel-name"></h2>
+        <p><span id="panel-desc"></span> <span id="panel-status" class="panel-status"></span></p>
+      </div>
+      <button type="button" class="panel-close" id="panel-close" aria-label="Close">
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <a class="primary panel-open" id="panel-open" href="#"></a>
+    <div class="panel-widgets" id="panel-widgets"></div>
+  </dialog>
+
   <template id="widget-tpl">
     <article class="widget">
       <header><h2></h2><a class="widget-link" target="_blank" rel="noopener" hidden>Open ↗</a></header>

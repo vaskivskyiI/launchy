@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { getConfig, resolveViewer, publicConfig, viewApps } from './config.js';
 import { sessionUser, sessionCookie, clearCookie, verifyPassword, clientIp, isThrottled, recordFailure, clearFailures } from './auth.js';
 import { getWidget, fetchJson } from './widgets.js';
+import { adminRequest } from './admin.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
@@ -54,7 +55,8 @@ function send(res, status, body, type = 'application/json', headers = {}) {
 }
 
 function serveStatic(req, res, pathname) {
-  const file = path.resolve(PUBLIC_DIR, '.' + (pathname === '/' ? '/index.html' : decodeURIComponent(pathname)));
+  const page = { '/': '/index.html', '/settings': '/settings.html' }[pathname] || decodeURIComponent(pathname);
+  const file = path.resolve(PUBLIC_DIR, '.' + page);
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, { error: 'forbidden' });
   fs.readFile(file, (err, data) => {
     if (err) return send(res, 404, { error: 'not found' });
@@ -63,12 +65,12 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 10_000) {
   if (!String(req.headers['content-type']).startsWith('application/json')) throw Object.assign(new Error('expected JSON'), { status: 415 });
   let body = '';
   for await (const chunk of req) {
     body += chunk;
-    if (body.length > 10_000) throw Object.assign(new Error('request too large'), { status: 413 });
+    if (body.length > limit) throw Object.assign(new Error('request too large'), { status: 413 });
   }
   return JSON.parse(body || '{}');
 }
@@ -103,9 +105,13 @@ const server = http.createServer(async (req, res) => {
       await readJson(req); // JSON content type keeps cross-site form posts out
       return send(res, 200, { ok: true }, 'application/json', { 'Set-Cookie': clearCookie(req) });
     }
-    if (req.method !== 'GET') return send(res, 405, { error: 'method not allowed' });
-
     const viewer = resolveViewer(cfg, sessionUser(req, cfg.users));
+    if (pathname.startsWith('/api/admin/')) {
+      if (!viewer?.admin) return send(res, viewer?.user ? 403 : 401, { errors: ['Only administrators can change settings'] });
+      const [status, body] = await adminRequest(req, pathname, viewer, readJson);
+      return send(res, status, body);
+    }
+    if (req.method !== 'GET') return send(res, 405, { error: 'method not allowed' });
     if (!viewer) return send(res, 401, { error: 'sign in required', canLogin: true, title: cfg.title || 'Launchy' });
     if (pathname === '/api/config') return send(res, 200, publicConfig(cfg, viewer));
     if (pathname === '/api/status') return send(res, 200, await appStatus(cfg, viewer.view));
