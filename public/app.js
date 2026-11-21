@@ -166,6 +166,7 @@ function renderText(text) {
 }
 
 function renderWidgetData(body, data) {
+  if (data.notice) { body.innerHTML = `<p class="widget-notice">${esc(data.notice)}</p>`; return; }
   let html = '';
   if (data.stats?.length) {
     html += `<div class="stats">${data.stats.map((s) => `

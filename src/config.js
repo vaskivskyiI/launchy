@@ -8,13 +8,11 @@ const CONFIG_PATH = process.env.LAUNCHY_CONFIG || 'config/config.yaml';
 
 let cached = null; // { mtimeMs, config }
 
+const ENV_REF = /\$\{([A-Z0-9_]+)\}/gi;
+const isUnset = (name) => !process.env[name];
+
 function substituteEnv(value) {
-  if (typeof value === 'string') {
-    return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_, name) => {
-      if (process.env[name] === undefined) console.warn(`[config] env var ${name} is not set`);
-      return process.env[name] ?? '';
-    });
-  }
+  if (typeof value === 'string') return value.replace(ENV_REF, (_, name) => process.env[name] ?? '');
   if (Array.isArray(value)) return value.map(substituteEnv);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, substituteEnv(v)]));
@@ -52,9 +50,17 @@ export function getConfig() {
   const { mtimeMs } = fs.statSync(CONFIG_PATH);
   if (cached && cached.mtimeMs === mtimeMs) return cached.config;
   try {
-    const config = validate(substituteEnv(YAML.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) || {}));
+    const raw = YAML.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) || {};
+    const config = validate(substituteEnv(raw));
+    // A widget whose ${SECRET} is unset is "not set up yet" (shown as such) rather than failing against its API.
+    const notSetUp = [];
+    for (const [id, w] of Object.entries(raw.widgets || {})) {
+      const missing = [...new Set([...JSON.stringify(w).matchAll(ENV_REF)].map((m) => m[1]))].filter(isUnset);
+      config.widgets[id].missing = missing;
+      if (missing.length) notSetUp.push(`${id} (${missing.join(', ')})`);
+    }
     cached = { mtimeMs, config };
-    console.log(`[config] loaded ${CONFIG_PATH}`);
+    console.log(`[config] loaded ${CONFIG_PATH}${notSetUp.length ? `; not set up yet: ${notSetUp.join(', ')}` : ''}`);
   } catch (err) {
     if (!cached) throw err;
     console.error(`[config] reload failed, keeping previous config: ${err.message}`);

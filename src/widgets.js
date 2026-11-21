@@ -4,7 +4,7 @@
 import http from 'node:http';
 import Anthropic from '@anthropic-ai/sdk';
 
-const DEFAULT_REFRESH = { podman: 30, stripe: 300, rss: 900, ical: 900, http: 120, ai: 1800 };
+const DEFAULT_REFRESH = { podman: 30, stripe: 300, rss: 900, ical: 900, http: 120, halcyon: 120, ai: 1800 };
 const cache = new Map(); // widgetId -> { at, data, pending }
 
 async function request(url, { headers = {}, timeout = 8000, method = 'GET', body } = {}) {
@@ -29,6 +29,26 @@ const decodeEntities = (s) => s
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
   .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&');
 const stripTags = (s) => decodeEntities(s || '').replace(/<[^>]+>/g, '').trim();
+/** A spec is a dot path ("title.rendered") or a template with {paths} ("{label} on {camera}"). */
+const pick = (obj, spec) => {
+  if (spec == null || spec === '') return undefined;
+  const v = String(spec).includes('{')
+    ? String(spec).replace(/\{([^}]+)\}/g, (_, p) => getPath(obj, p.trim()) ?? '')
+    : getPath(obj, spec);
+  const s = v == null ? '' : String(v).trim();
+  return s || undefined;
+};
+/** ISO strings, epoch milliseconds or epoch seconds (also as numeric strings). */
+const toDate = (v) => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+const whenLabel = (date, allDay, locale = 'en-GB') => {
+  const day = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+  return allDay ? day : `${day} ${new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
+};
 const relTime = (date) => {
   const diff = (date - Date.now()) / 1000;
   const units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
@@ -166,40 +186,90 @@ const providers = {
       return { start: parseDate(field('DTSTART')), allDay: /DTSTART[^:]*VALUE=DATE[:;]/.test(ev),
         title: unescape(field('SUMMARY')), location: unescape(field('LOCATION')), url: field('URL') };
     }).filter((e) => e.start && e.start >= now - 3600000 && e.start <= until).sort((a, b) => a.start - b.start);
-    const fmt = new Intl.DateTimeFormat(w.locale || 'en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-    const time = new Intl.DateTimeFormat(w.locale || 'en-GB', { hour: '2-digit', minute: '2-digit' });
     return {
       items: events.slice(0, w.limit || 6).map((e) => ({
         title: e.title || '(untitled)',
-        subtitle: [fmt.format(e.start) + (e.allDay ? '' : ` ${time.format(e.start)}`), e.location].filter(Boolean).join(' · '),
+        subtitle: [whenLabel(e.start, e.allDay, w.locale), e.location].filter(Boolean).join(' · '),
         url: e.url,
       })),
       text: events.length ? undefined : `Nothing in the next ${w.days || 14} days.`,
     };
   },
 
-  /** Any JSON API: map fields with dot paths. Covers most self-hosted apps until they get a dedicated provider. */
+  /** Any JSON API. Fields are dot paths or {templates}; `date` (ISO or epoch) is shown as "2 hours ago". */
   async http(w) {
     const data = await fetchJson(w.url, { headers: w.headers });
     const out = {};
-    if (w.stats) out.stats = w.stats.map((s) => ({ label: s.label, value: getPath(data, s.path) ?? '—' }));
+    if (w.stats) out.stats = w.stats.map((s) => ({ label: s.label, value: pick(data, s.path) ?? '—' }));
     if (w.items) {
-      const list = getPath(data, w.items.path) || [];
-      out.items = list.slice(0, w.items.limit || 6).map((it) => ({
-        title: String(getPath(it, w.items.title) ?? ''),
-        subtitle: w.items.subtitle ? String(getPath(it, w.items.subtitle) ?? '') : undefined,
-        url: w.items.url ? String(getPath(it, w.items.url) ?? '') : undefined,
-      }));
+      const spec = w.items;
+      const list = getPath(data, spec.path) || [];
+      if (!Array.isArray(list)) throw new Error(`items.path "${spec.path}" is not a list`);
+      out.items = list.slice(0, spec.limit || 6).map((it) => {
+        const date = spec.date ? toDate(getPath(it, spec.date)) : null;
+        return {
+          title: pick(it, spec.title) || '(untitled)',
+          subtitle: [pick(it, spec.subtitle), date && relTime(date)].filter(Boolean).join(' · ') || undefined,
+          meta: pick(it, spec.meta),
+          url: pick(it, spec.url),
+        };
+      });
+      if (!list.length && spec.empty) out.text = spec.empty;
     }
-    if (w.text) out.text = String(getPath(data, w.text) ?? '');
+    if (w.text) out.text = pick(data, w.text);
     return out;
+  },
+
+  /** Halcyon mail and calendar through its assistant endpoint (a read-only token, optionally limited to one space).
+   *  show: brief (mail needing attention, tasks, today's events; default) | events (the next `days`). */
+  async halcyon(w) {
+    const call = async (name, args = {}) => {
+      const res = await request(`${String(w.url).replace(/\/$/, '')}/api/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${w.token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+      });
+      const msg = await res.json();
+      if (msg.error) throw new Error(`Halcyon: ${msg.error.message}`);
+      if (msg.result?.isError) throw new Error(`Halcyon: ${msg.result.content?.[0]?.text || 'request failed'}`);
+      return msg.result?.structuredContent || {};
+    };
+    if (w.show === 'events') {
+      const days = w.days || 7;
+      const { items: events = [] } = await call('list_events', { from: new Date().toISOString(), to: new Date(Date.now() + days * 864e5).toISOString() });
+      return {
+        items: events.slice(0, w.limit || 6).map((e) => ({
+          title: e.title || '(untitled)',
+          subtitle: [whenLabel(new Date(e.start), e.all_day, w.locale), e.location].filter(Boolean).join(' · '),
+          meta: e.calendar || undefined,
+        })),
+        text: events.length ? undefined : `Nothing in the next ${days} days.`,
+      };
+    }
+    const { brief, live = {} } = await call('get_brief');
+    const list = (k) => live[k] || [];
+    const mail = [...list('attention'), ...list('actions'), ...list('awaiting').map((m) => ({ ...m, action: 'awaiting reply' }))];
+    return {
+      stats: [
+        { label: 'Needs attention', value: list('attention').length, tone: list('attention').length ? 'warn' : undefined },
+        { label: 'Awaiting reply', value: list('awaiting').length },
+        { label: 'Tasks', value: list('tasks').length, tone: list('tasks').some((t) => t.overdue) ? 'warn' : undefined },
+        { label: 'Events today', value: list('events').length },
+      ],
+      items: mail.slice(0, w.limit || 5).map((m) => {
+        const date = toDate(m.date);
+        return { title: m.subject || '(no subject)', subtitle: [m.from, date && relTime(date)].filter(Boolean).join(' · '), meta: m.action || undefined };
+      }),
+      text: w.brief && brief ? brief : mail.length ? undefined : 'Nothing needs attention.',
+    };
   },
 
   /** LLM-written digest of other widgets' data (mail, notes, calendar, payments…), by Claude or a local model. */
   async ai(w, cfg) {
     const parts = [];
-    for (const id of w.sources || []) {
-      if (cfg.widgets[id].type === 'ai') continue;
+    const sources = (w.sources || []).filter((id) => cfg.widgets[id].type !== 'ai' && !cfg.widgets[id].missing?.length);
+    if (!sources.length) return { notice: 'Not set up yet: none of its sources are set up.' };
+    for (const id of sources) {
       try {
         parts.push(`<source name="${cfg.widgets[id].title || id}">\n${JSON.stringify(await getWidget(cfg, id))}\n</source>`);
       } catch (err) {
@@ -220,6 +290,7 @@ export function getWidget(cfg, id) {
   const w = cfg.widgets[id];
   const provider = providers[w.type];
   if (!provider) return Promise.reject(new Error(`unknown widget type "${w.type}"`));
+  if (w.missing?.length) return Promise.resolve({ notice: `Not set up yet: add ${w.missing.join(', ')} to the env file.` });
   const ttl = (w.refresh ?? DEFAULT_REFRESH[w.type] ?? 300) * 1000;
   const entry = cache.get(id);
   if (entry?.data && Date.now() - entry.at < ttl) return Promise.resolve(entry.data);

@@ -173,6 +173,7 @@ body.locked dialog#login #login-cancel { display: none; }
 .widget-text p { margin: 4px 0; color: var(--muted); }
 .widget-error { color: var(--muted); font-size: 13px; margin: 4px 0 0; display: flex; gap: 8px; align-items: baseline; }
 .widget-error::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); transform: translateY(-1px); }
+.widget-notice { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 .skeleton { height: 12px; border-radius: 6px; margin: 10px 0; background: var(--border); animation: pulse 1.4s ease-in-out infinite; }
 .skeleton.short { width: 60%; }
 @keyframes pulse { 50% { opacity: .45; } }

@@ -15,8 +15,11 @@ A self-hosted browser start page: one search bar that also opens your apps, app 
   | `stripe` | balance and latest payments |
   | `ical` | upcoming events from any iCal feed (Pixieset/Pic-Time calendar sync, Google, Nextcloud) |
   | `rss` | latest posts from a website feed |
-  | `http` | any JSON API, with fields mapped by dot paths |
+  | `http` | any JSON API: fields are dot paths (`title.rendered`) or templates (`"{label} on {camera}"`), and `date` (ISO or epoch) shows as "2 hours ago" |
+  | `halcyon` | Halcyon mail needing attention, tasks and today's events, or (`show: events`) the coming days, through its read-only assistant token |
   | `ai` | a short briefing built from other widgets' data, by your local model or Claude |
+
+  A widget whose `${SECRET}` is not set shows "Not set up yet" with the variable to add, instead of an error.
 - **Settings reload on save.** All of the above lives in `config/config.yaml`. A broken edit keeps the last good settings running and logs the error.
 
 ## Users and passwords
