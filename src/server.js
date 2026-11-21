@@ -132,3 +132,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => console.log(`Launchy on http://localhost:${PORT}`));
+
+// As PID 1 in a container, Node has no default signal handlers: without these, `podman stop` waits for SIGKILL.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+    setTimeout(() => process.exit(0), 3000).unref();
+  });
+}
