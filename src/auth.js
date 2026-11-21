@@ -55,9 +55,10 @@ const MAX_FAILURES = 5;
 const failures = new Map(); // ip -> { count, since }
 
 export function clientIp(req) {
-  // Behind nginx the socket address is the proxy; trust X-Real-IP / X-Forwarded-For only from loopback.
+  // Behind a reverse proxy the socket address is the proxy (or podman's port forwarder); trust
+  // X-Real-IP / X-Forwarded-For only when the connection comes from loopback or a private network.
   const direct = req.socket.remoteAddress || '';
-  const fromProxy = /^(::ffff:)?127\.|^::1$/.test(direct);
+  const fromProxy = /^(::ffff:)?(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|^::1$|^f[cd]/i.test(direct);
   return (fromProxy && (req.headers['x-real-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim())) || direct;
 }
 
