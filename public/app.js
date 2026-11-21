@@ -198,9 +198,10 @@ async function refreshStatus() {
 
 // Briefing text: "- " bullets, **bold**, and [n] citations that link to the item they mention.
 function renderText(text, refs = {}) {
-  const inline = (line) => esc(line)
+  let shown = 0; // links in the current line: at most three, so a line stays readable
+  const inline = (line) => (shown = 0, esc(line))
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\[(\d+)\]/g, (m, n) => (refs[n]
+    .replace(/\[(\d+)\]/g, (m, n) => (refs[n] && ++shown <= 3
       ? `<a class="ref" href="${esc(refs[n].url)}" target="_blank" rel="noopener" title="${esc(refs[n].title)}" aria-label="Open: ${esc(refs[n].title)}">↗</a>`
       : ''));
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
