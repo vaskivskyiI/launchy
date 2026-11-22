@@ -295,6 +295,23 @@ function usedBy(kind, id) {
 
 const newEngines = new WeakSet();
 
+/** App ids of common self-hosted apps, keyed by their dashboard-icons name (offered, never applied silently). */
+const KNOWN_APPS = {
+  'home-assistant': { android: 'io.homeassistant.companion.android', appLink: 'homeassistant://navigate/lovelace' },
+  immich: { android: 'app.alextran.immich', appLink: 'immich://' },
+  jellyfin: { android: 'org.jellyfin.mobile' },
+  vaultwarden: { android: 'com.x8bit.bitwarden', appLink: 'bitwarden://' },
+  bitwarden: { android: 'com.x8bit.bitwarden', appLink: 'bitwarden://' },
+  seafile: { android: 'com.seafile.seadroid2' },
+  nextcloud: { android: 'com.nextcloud.client', appLink: 'nc://' },
+  'paperless-ngx': { android: 'de.astubenbord.paperless_mobile' },
+  stripe: { android: 'com.stripe.android.dashboard' },
+  instagram: { android: 'com.instagram.android', appLink: 'instagram://' },
+  github: { android: 'com.github.android' },
+  'microsoft-outlook': { android: 'com.microsoft.office.outlook', appLink: 'ms-outlook://' },
+  syncthing: { android: 'com.github.catfriend1.syncthingandroid' },
+};
+
 const SECTIONS = [
   ['users', 'Users'], ['apps', 'Apps'], ['groups', 'Groups'], ['widgets', 'Widgets'],
   ['general', 'Start page'], ['search', 'Search'], ['ai', 'AI'], ['secrets', 'Secrets'],
@@ -389,6 +406,15 @@ const sectionRenderers = {
           h('div.row-icon', {}, field('Icon', text(a, 'icon', { onchange: () => preview.replaceChildren(iconPreview(a.icon, a.name)) }),
             h('span', {}, 'A name from ', h('a', { href: 'https://dashboard-icons.dev', target: '_blank', rel: 'noopener' }, 'dashboard-icons.dev'), ', an image address, or an emoji.')), preview),
           field('Search words', listText(a, 'tags', 'movies, tv'), 'Comma-separated; the search box also finds the app by these.'),
+          h('h4', {}, 'Installed app'),
+          h('p.help', {}, 'Where the app is installed, a click on the tile opens it instead of the web page (Ctrl+click and the panel still offer the web page). Leave empty to always use the web page.'),
+          h('div.row2', {},
+            field('Android app id', text(a, 'android', { placeholder: 'io.homeassistant.companion.android' }), 'From the app\'s Play Store address (…?id=…).'),
+            field('App link (computer, iPhone)', text(a, 'appLink', { placeholder: 'homeassistant://' }), 'A link scheme the app registers, e.g. bitwarden://')),
+          KNOWN_APPS[a.icon] && (a.android !== KNOWN_APPS[a.icon].android || a.appLink !== KNOWN_APPS[a.icon].appLink)
+            ? h('button.pill', { type: 'button', onclick: () => { Object.assign(a, KNOWN_APPS[a.icon]); for (const k of ['android', 'appLink']) if (!a[k]) delete a[k]; changed(); render(); } },
+              `Use the known ${a.name} app ids`)
+            : null,
           field('Status dot', h('select', {
             onchange: (e) => { const m = e.target.value; if (m === 'off') a.ping = false; else if (m === 'url') delete a.ping; else a.ping ||= ''; drawPing(m); changed(); },
           }, [['url', 'Check the address above'], ['custom', 'Check another address'], ['off', 'No status dot']].map(([v, l]) => h('option', { value: v, selected: v === pingMode }, l)))),

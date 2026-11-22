@@ -2,6 +2,7 @@ const $ = (sel) => document.querySelector(sel);
 const store = {
   get(key) { try { return localStorage.getItem(`launchy.${key}`); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(`launchy.${key}`, value); } catch { /* private mode */ } },
+  remove(key) { try { localStorage.removeItem(`launchy.${key}`); } catch { /* private mode */ } },
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const ICON_CDN = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/';
@@ -129,8 +130,51 @@ function iconHtml(icon, name) {
 const appWidgets = (appId) => cfg.widgets.filter((w) => w.app === appId);
 const findApp = (appId) => cfg.groups.flatMap((g) => g.apps).find((a) => a.key === appId);
 
-// A tile opens its app. Apps with widgets also get a badge (e.g. mail needing attention) and a details button
-// that opens a side panel with the widgets and an "Open" button.
+// ---------------------------------------------------------------- installed apps
+// A browser cannot ask whether an app is installed, so each platform's own launch-with-fallback is used:
+// - Android: an intent: link with the package id; Chrome opens the app, or the web address when it is missing.
+// - elsewhere: the app's link scheme (myapp://…). If the page is still in front 1.6 s later, nothing opened it:
+//   the web address opens instead and this device remembers to skip the app (the panel's "Open the app" retries).
+// The web address stays one step away: Ctrl/middle-click on a tile, or "Open in browser" in the panel.
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+
+function nativeLink(a) {
+  if (IS_ANDROID && a.android) {
+    return `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${a.android};` +
+      `S.browser_fallback_url=${encodeURIComponent(a.url)};end`;
+  }
+  return a.appLink || null;
+}
+
+const noAppKey = (a) => `noapp.${a.key}`;
+const opensApp = (a) => Boolean(nativeLink(a)) && !store.get(noAppKey(a));
+
+function launchApp(a, { retry = false } = {}) {
+  const link = nativeLink(a);
+  if (!link || (!retry && store.get(noAppKey(a)))) { location.href = a.url; return; }
+  if (link.startsWith('intent:')) { location.href = link; return; }
+  let left = false;
+  const away = () => { left = true; };
+  window.addEventListener('blur', away);
+  document.addEventListener('visibilitychange', away);
+  // Firefox shows an error page for a scheme nothing handles; a hidden frame keeps this page instead.
+  if (/Firefox\//.test(navigator.userAgent)) {
+    const frame = Object.assign(document.createElement('iframe'), { hidden: true, src: link });
+    document.body.append(frame);
+    setTimeout(() => frame.remove(), 3000);
+  } else {
+    location.href = link;
+  }
+  setTimeout(() => {
+    window.removeEventListener('blur', away);
+    document.removeEventListener('visibilitychange', away);
+    if (left) store.remove(noAppKey(a));
+    else { store.set(noAppKey(a), '1'); location.href = a.url; }
+  }, 1600);
+}
+
+// A tile opens its app (installed app first, see above). Apps with widgets also get a badge (e.g. mail needing
+// attention) and a details button that opens a side panel with the widgets and "Open" buttons.
 function renderApps() {
   $('#apps').innerHTML = cfg.groups.map((g) => `
     <section class="group">
@@ -138,12 +182,12 @@ function renderApps() {
       <div class="grid">
         ${g.apps.map((a) => `
           <div class="tile" data-key="${esc(a.key)}">
-            <a class="tile-link" href="${esc(a.url)}" title="${esc(a.description || a.url)}">
+            <a class="tile-link" href="${esc(a.url)}" title="${esc(opensApp(a) ? `Opens the ${a.name} app · Ctrl+click: in the browser` : a.description || a.url)}">
               <span class="icon">${iconHtml(a.icon, a.name)}</span>
               <span class="text"><span class="name">${esc(a.name)}</span>${a.description ? `<span class="desc">${esc(a.description)}</span>` : ''}</span>
             </a>
             <span class="badge" hidden></span>
-            ${appWidgets(a.key).length ? `<button type="button" class="tile-more" data-app="${esc(a.key)}" aria-label="${esc(a.name)}: details" title="Details">
+            ${appWidgets(a.key).length || nativeLink(a) ? `<button type="button" class="tile-more" data-app="${esc(a.key)}" aria-label="${esc(a.name)}: details" title="Details">
               <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
             ${a.monitored ? '<span class="dot" role="img" aria-label="status unknown"></span>' : ''}
           </div>`).join('')}
@@ -153,7 +197,12 @@ function renderApps() {
 
 $('#apps').addEventListener('click', (e) => {
   const more = e.target.closest('.tile-more');
-  if (more) openPanel(more.dataset.app);
+  if (more) return openPanel(more.dataset.app);
+  const link = e.target.closest('.tile-link');
+  // Only a plain click goes to the installed app; Ctrl/Shift/middle-click keep the browser's own link behaviour.
+  if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  const a = findApp(link.closest('.tile').dataset.key);
+  if (a && opensApp(a)) { e.preventDefault(); launchApp(a); }
 });
 
 // ---------------------------------------------------------------- app panel
@@ -169,7 +218,12 @@ function openPanel(appId) {
   const s = appStatus[appId];
   $('#panel-status').textContent = s === 'up' ? 'Online' : s === 'down' ? 'Not responding' : '';
   $('#panel-status').className = `panel-status ${s || ''}`;
-  Object.assign($('#panel-open'), { href: a.url, textContent: `Open ${a.name}` });
+  // With an installed app: "Open the app" (always tries it, even where it failed before) and "Open in browser".
+  const native = Boolean(nativeLink(a));
+  const open = $('#panel-open');
+  Object.assign(open, { href: a.url, textContent: native ? `Open the ${a.name} app` : `Open ${a.name}` });
+  open.onclick = native ? (e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); launchApp(a, { retry: true }); } } : null;
+  Object.assign($('#panel-web'), { href: a.url, hidden: !native });
   const box = $('#panel-widgets');
   box.innerHTML = '';
   for (const w of appWidgets(appId)) box.append(widgetCard(w));
@@ -349,7 +403,7 @@ function update() {
   const lower = q.toLowerCase();
   const apps = lower ? [...new Map(cfg.groups.flatMap((g) => g.apps).map((a) => [a.key, a])).values()]
     .map((a) => ({ a, s: scoreApp(a, lower) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 5) : [];
-  const appResults = apps.map(({ a }) => ({ kind: 'App', label: a.name, icon: iconHtml(a.icon, a.name), url: a.url }));
+  const appResults = apps.map(({ a }) => ({ kind: 'App', label: a.name, icon: iconHtml(a.icon, a.name), url: a.url, app: a }));
   const web = q ? [{ kind: p.name, label: q, icon: '⌕', url: searchUrl(p, q), primary: true }] : [];
   const go = looksLikeUrl(raw) ? [{ kind: 'Open', label: raw, icon: '↗', url: /^https?:/i.test(raw) ? raw : `http://${raw}` }] : [];
   const sugg = suggestions.filter((s) => s.toLowerCase() !== lower)
@@ -397,8 +451,10 @@ function queueSuggest(p, q) {
   }, 160);
 }
 
-function open(url, newTab) {
+/** Opens a search result: an app result opens its installed app unless a new tab was asked for. */
+function open(url, newTab, app) {
   if (newTab) window.open(url, '_blank', 'noopener');
+  else if (app && opensApp(app)) launchApp(app);
   else location.href = url;
 }
 
@@ -411,7 +467,7 @@ input.addEventListener('keydown', (e) => {
     renderResults();
   } else if (e.key === 'Enter' && results.length) {
     e.preventDefault();
-    open(results[selected].url, e.ctrlKey || e.metaKey);
+    open(results[selected].url, e.ctrlKey || e.metaKey, results[selected].app);
   } else if (e.key === 'Escape') {
     if (!resultsEl.hidden) closeResults(); else { input.value = ''; input.blur(); }
   }
@@ -427,7 +483,8 @@ resultsEl.addEventListener('mousedown', (e) => {
   const li = e.target.closest('li[data-i]');
   if (!li) return;
   e.preventDefault();
-  open(results[Number(li.dataset.i)].url, e.ctrlKey || e.metaKey || e.button === 1);
+  const r = results[Number(li.dataset.i)];
+  open(r.url, e.ctrlKey || e.metaKey || e.button === 1, r.app);
 });
 input.addEventListener('blur', () => setTimeout(closeResults, 100));
 

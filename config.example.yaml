@@ -36,7 +36,8 @@ search:
 # Every service, defined once. ping: the address the status dot checks (default: url; false = none).
 # icon: a name from https://dashboard-icons.dev, an image address, or an emoji.
 apps:
-  home-assistant: { name: Home Assistant, url: "https://home.example.com", icon: home-assistant, ping: "http://192.168.1.10:8123" }
+  home-assistant: { name: Home Assistant, url: "https://home.example.com", icon: home-assistant, ping: "http://192.168.1.10:8123",
+                    android: io.homeassistant.companion.android, appLink: "homeassistant://navigate/lovelace" }   # opens the installed app
   cameras: { name: Cameras, url: "https://nvr.example.com", icon: frigate, ping: "http://192.168.1.10:8971" }
   jellyfin: { name: Movies & TV, url: "https://media.example.com", icon: jellyfin, ping: "http://192.168.1.10:8096" }
   photos: { name: Photos, url: "https://photo.example.com", icon: immich, ping: "http://192.168.1.10:2283" }

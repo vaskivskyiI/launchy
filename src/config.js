@@ -2,7 +2,7 @@
 // changes, validates, saves edits from the settings page, and builds the secret-free view a browser receives.
 //
 // Shape (version 2):
-//   apps:    { <id>: { name, url, icon?, description?, tags?, ping? } }      every service, defined once
+//   apps:    { <id>: { name, url, icon?, description?, tags?, ping?, android?, appLink? } }   every service, once
 //   groups:  { <id>: { title, apps: [<app id>, …] } }
 //   widgets: { <id>: { type, title?, app?, link?, refresh?, …type fields } }  app: shown in that app's panel
 //   users:   { <name>: { name?, password, admin?, groups: […], widgets: […], theme?, search?, greeting? } }
@@ -25,6 +25,9 @@ export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 const USERNAME = /^[a-z0-9_-]{1,32}$/;
 const PASSWORD_HASH = /^scrypt:[A-Za-z0-9+/]{22}==:[A-Za-z0-9+/]{43}=$/;
 const REF = /\$\{([A-Z0-9_]+)\}/gi;
+// Installed apps: an Android package id, and/or a link scheme the app registers (myapp://…) for desktop and iOS.
+const ANDROID_PACKAGE = /^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/;
+const isAppLink = (u) => /^[a-z][a-z0-9+.-]*:\S+$/i.test(u) && !/^(javascript|data|vbscript|file|blob):/i.test(u);
 
 let cached = null; // { stamp, raw, config }
 
@@ -96,6 +99,8 @@ export function validate(cfg) {
     if (!a?.name) errors.push(`App "${id}" needs a name`);
     if (!isUrl(a?.url)) errors.push(`App "${id}" needs an http(s) address`);
     if (a?.ping && a.ping !== false && !isUrl(a.ping)) errors.push(`App "${id}": the status-check address must be http(s)`);
+    if (a?.android && !ANDROID_PACKAGE.test(a.android)) errors.push(`App "${id}": the Android app id looks like com.example.app`);
+    if (a?.appLink && !isAppLink(a.appLink)) errors.push(`App "${id}": the app link must look like myapp://… (not javascript:, data: or file:)`);
   }
   for (const [id, g] of Object.entries(groups)) {
     if (!ID.test(id)) errors.push(`Group id "${id}": use a-z, 0-9, "-" and "_"`);
@@ -214,7 +219,8 @@ export function publicConfig(cfg, viewer) {
       title: cfg.groups[gid].title || gid,
       apps: (cfg.groups[gid].apps || []).map((id) => {
         const a = cfg.apps[id];
-        return { key: id, name: a.name, url: a.url, icon: a.icon, description: a.description, tags: a.tags || [], monitored: a.ping !== false };
+        return { key: id, name: a.name, url: a.url, icon: a.icon, description: a.description, tags: a.tags || [], monitored: a.ping !== false,
+          android: a.android, appLink: a.appLink };
       }),
     })),
     // A widget belongs to its app's panel when this view shows that app; otherwise it is on the main page.
