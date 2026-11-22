@@ -132,7 +132,9 @@ const findApp = (appId) => cfg.groups.flatMap((g) => g.apps).find((a) => a.key =
 
 // ---------------------------------------------------------------- installed apps
 // A browser cannot ask whether an app is installed, so each platform's own launch-with-fallback is used:
-// - Android: an intent: link with the package id; Chrome opens the app, or the web address when it is missing.
+// - Android: an intent: link addressed to the package. Chrome only lets a page open an app through a link the app
+//   declares as "browsable" (its deep link), never its plain launcher screen, so the intent carries the app link
+//   (myapp://…) when there is one, else the app's web address. Without a matching app Chrome opens the web address.
 // - elsewhere: the app's link scheme (myapp://…). If the page is still in front 1.6 s later, nothing opened it:
 //   the web address opens instead and this device remembers to skip the app (the panel's "Open the app" retries).
 // The web address stays one step away: Ctrl/middle-click on a tile, or "Open in browser" in the panel.
@@ -140,8 +142,8 @@ const IS_ANDROID = /Android/i.test(navigator.userAgent);
 
 function nativeLink(a) {
   if (IS_ANDROID && a.android) {
-    return `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${a.android};` +
-      `S.browser_fallback_url=${encodeURIComponent(a.url)};end`;
+    const [, scheme, rest] = (a.appLink || a.url).match(/^([a-z][a-z0-9+.-]*):(?:\/\/)?(.*)$/i);
+    return `intent://${rest}#Intent;scheme=${scheme};package=${a.android};S.browser_fallback_url=${encodeURIComponent(a.url)};end`;
   }
   return a.appLink || null;
 }

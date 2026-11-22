@@ -410,7 +410,8 @@ const sectionRenderers = {
           h('p.help', {}, 'Where the app is installed, a click on the tile opens it instead of the web page (Ctrl+click and the panel still offer the web page). Leave empty to always use the web page.'),
           h('div.row2', {},
             field('Android app id', text(a, 'android', { placeholder: 'io.homeassistant.companion.android' }), 'From the app\'s Play Store address (…?id=…).'),
-            field('App link (computer, iPhone)', text(a, 'appLink', { placeholder: 'homeassistant://' }), 'A link scheme the app registers, e.g. bitwarden://')),
+            field('App link', text(a, 'appLink', { placeholder: 'homeassistant://navigate/lovelace' }),
+              'A link the app registers, e.g. bitwarden://. On Android the app is opened through this link, or else through the web address; Android only allows that when the app declares the link, otherwise the web page opens.')),
           KNOWN_APPS[a.icon] && (a.android !== KNOWN_APPS[a.icon].android || a.appLink !== KNOWN_APPS[a.icon].appLink)
             ? h('button.pill', { type: 'button', onclick: () => { Object.assign(a, KNOWN_APPS[a.icon]); for (const k of ['android', 'appLink']) if (!a[k]) delete a[k]; changed(); render(); } },
               `Use the known ${a.name} app ids`)
