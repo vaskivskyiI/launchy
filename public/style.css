@@ -81,7 +81,7 @@ body.locked dialog#login #login-cancel { display: none; }
 
 /* ---------------------------------------------------------------- search */
 .search {
-  position: relative; display: flex; align-items: center; gap: 4px; margin: 32px 0 40px;
+  position: relative; display: flex; align-items: center; gap: 4px; margin: 32px 0 16px;
   background: var(--surface-solid); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow);
   padding: 6px 8px; transition: border-color .15s, box-shadow .15s;
 }
@@ -117,7 +117,10 @@ body.locked dialog#login #login-cancel { display: none; }
 /* ---------------------------------------------------------------- layout */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; padding-bottom: 64px; }
 .layout.no-widgets { grid-template-columns: 1fr; }
-@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+  .widgets { order: -1; } /* phones and narrow windows: the briefing comes before the tiles */
+}
 @media (max-width: 600px) { .topbar, main { padding: 0 16px; } .topbar { padding-top: 24px; } .time { font-size: 34px; } }
 
 /* ---------------------------------------------------------------- apps */
@@ -228,3 +231,27 @@ dialog.panel::backdrop { background: color-mix(in srgb, #000 25%, transparent); 
 .panel-web { margin: 0 20px 16px; text-align: center; font-size: 13px; color: var(--muted); }
 .panel-web:hover { color: var(--accent); }
 .panel-web[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- recent apps (under the search bar) */
+.layout { margin-top: 24px; }
+.recent {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; margin: 0 -2px;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.recent::-webkit-scrollbar { display: none; }
+.recent[hidden] { display: none; }
+.recent-app {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); font-size: 13.5px; backdrop-filter: blur(12px);
+}
+.recent-app:hover, .recent-app:focus-visible { border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--surface-hover); }
+.recent-app .icon { width: 22px; height: 22px; display: grid; place-items: center; flex: none; }
+.recent-app .icon img { width: 22px; height: 22px; object-fit: contain; }
+.recent-app .icon .emoji { font-size: 17px; }
+.recent-app .icon .monogram { font-size: 11px; border-radius: 6px; }
+.recent-app .name { white-space: nowrap; }
+@media (max-width: 1000px) { .layout { gap: 28px; } }
+@media (max-width: 600px) {
+  .recent-app { padding: 6px 8px; }
+  .recent-app .name { max-width: 9ch; overflow: hidden; text-overflow: ellipsis; }
+}

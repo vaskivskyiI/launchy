@@ -295,21 +295,13 @@ function usedBy(kind, id) {
 
 const newEngines = new WeakSet();
 
-/** App ids of common self-hosted apps, keyed by their dashboard-icons name (offered, never applied silently). */
+/** App ids of common apps, keyed by their dashboard-icons name (offered, never applied silently). Only apps that
+ *  accept a link from a browser are listed: Jellyfin, Seafile and Bitwarden (Android) cannot be opened from a page. */
 const KNOWN_APPS = {
   'home-assistant': { android: 'io.homeassistant.companion.android', appLink: 'homeassistant://navigate/lovelace' },
   immich: { android: 'app.alextran.immich', appLink: 'immich://' },
-  jellyfin: { android: 'org.jellyfin.mobile' },
-  vaultwarden: { android: 'com.x8bit.bitwarden', appLink: 'bitwarden://' },
-  bitwarden: { android: 'com.x8bit.bitwarden', appLink: 'bitwarden://' },
-  seafile: { android: 'com.seafile.seadroid2' },
-  nextcloud: { android: 'com.nextcloud.client', appLink: 'nc://' },
-  'paperless-ngx': { android: 'de.astubenbord.paperless_mobile' },
-  stripe: { android: 'com.stripe.android.dashboard' },
-  instagram: { android: 'com.instagram.android', appLink: 'instagram://' },
+  instagram: { android: 'com.instagram.android' },
   github: { android: 'com.github.android' },
-  'microsoft-outlook': { android: 'com.microsoft.office.outlook', appLink: 'ms-outlook://' },
-  syncthing: { android: 'com.github.catfriend1.syncthingandroid' },
 };
 
 const SECTIONS = [

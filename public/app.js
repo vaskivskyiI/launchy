@@ -30,6 +30,7 @@ async function load() {
     || cfg.search.providers.find((p) => p.id === cfg.viewer.search) || cfg.search.providers[0];
   renderProvider();
   renderApps();
+  renderRecent();
   renderWidgets();
   refreshStatus();
   timers.push(setInterval(refreshStatus, 60_000));
@@ -135,14 +136,17 @@ const findApp = (appId) => cfg.groups.flatMap((g) => g.apps).find((a) => a.key =
 // - Android: an intent: link addressed to the package. Chrome only lets a page open an app through a link the app
 //   declares as "browsable" (its deep link), never its plain launcher screen, so the intent carries the app link
 //   (myapp://…) when there is one, else the app's web address. Without a matching app Chrome opens the web address.
+//   Apps that declare no such link (e.g. Jellyfin, Seafile) cannot be opened from any web page on Android.
 // - elsewhere: the app's link scheme (myapp://…). If the page is still in front 1.6 s later, nothing opened it:
 //   the web address opens instead and this device remembers to skip the app (the panel's "Open the app" retries).
 // The web address stays one step away: Ctrl/middle-click on a tile, or "Open in browser" in the panel.
 const IS_ANDROID = /Android/i.test(navigator.userAgent);
 
 function nativeLink(a) {
-  if (IS_ANDROID && a.android) {
-    const [, scheme, rest] = (a.appLink || a.url).match(/^([a-z][a-z0-9+.-]*):(?:\/\/)?(.*)$/i);
+  if (IS_ANDROID) {
+    if (!a.android) return null; // a bare myapp:// link without the app's id only costs a wait on Android
+    let [, scheme, rest] = (a.appLink || a.url).match(/^([a-z][a-z0-9+.-]*):(?:\/\/)?(.*)$/i);
+    if (/^https?$/i.test(scheme) && !rest.includes('/')) rest += '/'; // web links match on a path, at least "/"
     return `intent://${rest}#Intent;scheme=${scheme};package=${a.android};S.browser_fallback_url=${encodeURIComponent(a.url)};end`;
   }
   return a.appLink || null;
@@ -184,7 +188,7 @@ function renderApps() {
       <div class="grid">
         ${g.apps.map((a) => `
           <div class="tile" data-key="${esc(a.key)}">
-            <a class="tile-link" href="${esc(a.url)}" title="${esc(opensApp(a) ? `Opens the ${a.name} app · Ctrl+click: in the browser` : a.description || a.url)}">
+            <a class="tile-link" data-app="${esc(a.key)}" href="${esc(a.url)}" title="${esc(opensApp(a) ? `Opens the ${a.name} app · Ctrl+click: in the browser` : a.description || a.url)}">
               <span class="icon">${iconHtml(a.icon, a.name)}</span>
               <span class="text"><span class="name">${esc(a.name)}</span>${a.description ? `<span class="desc">${esc(a.description)}</span>` : ''}</span>
             </a>
@@ -199,13 +203,46 @@ function renderApps() {
 
 $('#apps').addEventListener('click', (e) => {
   const more = e.target.closest('.tile-more');
-  if (more) return openPanel(more.dataset.app);
-  const link = e.target.closest('.tile-link');
-  // Only a plain click goes to the installed app; Ctrl/Shift/middle-click keep the browser's own link behaviour.
-  if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-  const a = findApp(link.closest('.tile').dataset.key);
-  if (a && opensApp(a)) { e.preventDefault(); launchApp(a); }
+  if (more) openPanel(more.dataset.app);
 });
+
+// Tiles and recent apps: a plain click opens the installed app when there is one; Ctrl/Shift/middle-click keep the
+// browser's own link behaviour (the web page). Every opening counts for "recent".
+function onAppLink(e) {
+  const link = e.target.closest('a[data-app]');
+  const a = link && findApp(link.dataset.app);
+  if (!a) return;
+  rememberRecent(a);
+  if (e.type !== 'click' || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  if (opensApp(a)) { e.preventDefault(); launchApp(a); }
+}
+document.addEventListener('click', onAppLink);
+document.addEventListener('auxclick', onAppLink);
+
+// ---------------------------------------------------------------- recent apps (per user, on this device)
+
+const RECENT_MAX = 8;
+const recentKey = () => `recent.${cfg.viewer.id}`;
+
+function rememberRecent(a) {
+  let list = [];
+  try { list = JSON.parse(store.get(recentKey()) || '[]'); } catch { /* corrupt: start over */ }
+  store.set(recentKey(), JSON.stringify([a.key, ...list.filter((k) => k !== a.key)].slice(0, RECENT_MAX)));
+  // After the click: replacing the clicked link while it is being followed would cancel the navigation.
+  setTimeout(renderRecent);
+}
+
+function renderRecent() {
+  let keys = [];
+  try { keys = JSON.parse(store.get(recentKey()) || '[]'); } catch { /* ignore */ }
+  const apps = keys.map(findApp).filter(Boolean); // apps no longer in this view drop out
+  const nav = $('#recent');
+  nav.hidden = !apps.length;
+  nav.innerHTML = apps.map((a) => `
+    <a class="recent-app" data-app="${esc(a.key)}" href="${esc(a.url)}" title="${esc(a.name)}">
+      <span class="icon">${iconHtml(a.icon, a.name)}</span><span class="name">${esc(a.name)}</span>
+    </a>`).join('');
+}
 
 // ---------------------------------------------------------------- app panel
 
@@ -224,8 +261,11 @@ function openPanel(appId) {
   const native = Boolean(nativeLink(a));
   const open = $('#panel-open');
   Object.assign(open, { href: a.url, textContent: native ? `Open the ${a.name} app` : `Open ${a.name}` });
-  open.onclick = native ? (e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); launchApp(a, { retry: true }); } } : null;
-  Object.assign($('#panel-web'), { href: a.url, hidden: !native });
+  open.onclick = (e) => {
+    rememberRecent(a);
+    if (native && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); launchApp(a, { retry: true }); }
+  };
+  Object.assign($('#panel-web'), { href: a.url, hidden: !native, onclick: () => rememberRecent(a) });
   const box = $('#panel-widgets');
   box.innerHTML = '';
   for (const w of appWidgets(appId)) box.append(widgetCard(w));
@@ -455,6 +495,7 @@ function queueSuggest(p, q) {
 
 /** Opens a search result: an app result opens its installed app unless a new tab was asked for. */
 function open(url, newTab, app) {
+  if (app) rememberRecent(app);
   if (newTab) window.open(url, '_blank', 'noopener');
   else if (app && opensApp(app)) launchApp(app);
   else location.href = url;
